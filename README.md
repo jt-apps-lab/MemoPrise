@@ -17,3 +17,5 @@ Lancez l’installateur téléchargé. Aucun droit administrateur ni installatio
 ## Code source
 
 Application C# / WPF, .NET 8 et SQLite. Sources dans `MemoPrise/`.
+
+*Développé avec l’aide de Codex.*
