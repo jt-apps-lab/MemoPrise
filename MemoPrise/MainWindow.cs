@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using System.Threading.Tasks;
 using Microsoft.Win32;
@@ -24,6 +25,7 @@ public partial class MainWindow : Window
     readonly Dictionary<string,DateTime> shown = new();
     readonly Dictionary<string,Button> navigation=new();
     Window? reminder;
+    Window? trayAnimation;
     string page = "Aujourd’hui";
     DateTime selected = DateTime.Today;
     bool quitting;
@@ -48,7 +50,8 @@ public partial class MainWindow : Window
         tray.DoubleClick+=(_,_)=>Dispatcher.Invoke(Open);
         var menu=new Forms.ContextMenuStrip(); menu.Items.Add("Ouvrir MémoPrise",null,(_,_)=>Dispatcher.Invoke(Open)); menu.Items.Add("Quitter",null,(_,_)=>Dispatcher.Invoke(Quit)); tray.ContextMenuStrip=menu;
         Closing+=(_,e)=> {if(!quitting) {e.Cancel=true; Hide();}};
-        StateChanged+=(_,_)=> {if(WindowState==WindowState.Minimized) ReduceToTray();};
+        StateChanged+=(_,_)=> {if(WindowState==WindowState.Minimized) HideToTray();};
+        SourceInitialized+=(_,_)=>HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(WindowMessage);
         store.MaterializePast();
         if(!preview && store.Setting("startup","true")=="true") SetStartup(true);
         ApplyFont(); Render(); timer.Tick+=(_,_)=> {if(!preview) Tick();}; timer.Start();
@@ -60,9 +63,19 @@ public partial class MainWindow : Window
     internal static Button Primary(Button button) {button.Background=Theme.Accent; button.Foreground=Brushes.White; button.BorderBrush=Theme.Solid("#527DB5"); return button;}
     static Border Badge(string label,string background="#EDF4FF",string foreground="#355C89")=>new() {Background=Brush(background),CornerRadius=new CornerRadius(8),Padding=new Thickness(10,5,10,5),Margin=new Thickness(0,0,8,6),HorizontalAlignment=HorizontalAlignment.Left,Child=new TextBlock {Text=label,FontSize=16,FontWeight=FontWeights.SemiBold,Foreground=Brush(foreground),TextWrapping=TextWrapping.Wrap}};
     static Border Card(UIElement content)=>new() {Background=Brushes.White,BorderBrush=Theme.Outline,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(18),Effect=Theme.Shadow,Padding=new Thickness(22),Margin=new Thickness(0,0,0,16),Child=content};
-    void ReduceToTray() {ShowInTaskbar=false; Hide();}
-    void Open() {WindowState=WindowState.Normal; ShowInTaskbar=true; Show(); Activate();}
-    void Quit() {if(MessageBox.Show("Quitter MémoPrise ? Les rappels seront arrêtés jusqu’au prochain lancement.","Quitter",MessageBoxButton.YesNo)==MessageBoxResult.Yes) {quitting=true; timer.Stop(); reminder?.Close(); tray.Dispose(); store.Dispose(); System.Windows.Application.Current.Shutdown();}}
+    void HideToTray() {ShowInTaskbar=false; Hide();}
+    IntPtr WindowMessage(IntPtr window,int message,IntPtr command,IntPtr parameter,ref bool handled) {
+        if(message==0x0112 && (command.ToInt64()&0xFFF0)==0xF020) {handled=true; ReduceToTray();}
+        return IntPtr.Zero;
+    }
+    void ReduceToTray() {
+        if(trayAnimation!=null || !IsVisible) return;
+        trayAnimation=TrayAnimation.Play(this);
+        if(trayAnimation!=null) {var animationWindow=trayAnimation; animationWindow.Closed+=(_,_)=> {if(trayAnimation==animationWindow) trayAnimation=null;};}
+        HideToTray();
+    }
+    void Open() {trayAnimation?.Close(); WindowState=WindowState.Normal; ShowInTaskbar=true; Show(); Activate();}
+    void Quit() {if(MessageBox.Show("Quitter MémoPrise ? Les rappels seront arrêtés jusqu’au prochain lancement.","Quitter",MessageBoxButton.YesNo)==MessageBoxResult.Yes) {quitting=true; timer.Stop(); reminder?.Close(); trayAnimation?.Close(); tray.Dispose(); store.Dispose(); System.Windows.Application.Current.Shutdown();}}
     void Render()
     {
         double offset=renderedPage==page?pageScroll.VerticalOffset:0; renderedPage=page;
