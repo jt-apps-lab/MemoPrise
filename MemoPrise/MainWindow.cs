@@ -228,11 +228,6 @@ public partial class MainWindow : Window
         var p=new StackPanel {Margin=new Thickness(24)}; p.Children.Add(Text(demo?"Tester le rappel":"À prendre maintenant :",28,true));
         foreach(var i in list) p.Children.Add(demo?Card(Text(i.Name+"\n"+i.Note,20)):IntakeCard(i,true));
         if(demo) p.Children.Add(Button("Fermer le test",()=>reminder?.Close()));
-        else {
-            var reports=new WrapPanel();
-            foreach(int minutes in new[]{15,30,60}) reports.Children.Add(Button(minutes==60?"Tout reporter de 1 h":$"Tout reporter de {minutes} min",()=> {var until=DateTime.Now.AddMinutes(minutes); foreach(var i in list) {store.Save(i with {Snooze=until}); shown.Remove(i.Key);} reminder?.Close(); Render();}));
-            p.Children.Add(reports);
-        }
         int changeCount=demo?0:list.Count(i=>store.Treatments().Any(t=>t.Id==i.TreatmentId && Schedule.PosologyChange(t,i.Due.Date)!=null));
         var w=new Window {Icon=AppIcon.WindowIcon,Title="MémoPrise — rappel",Width=660,Height=Math.Min(720,260+list.Count*210+changeCount*200),MinWidth=520,Topmost=true,WindowStartupLocation=WindowStartupLocation.CenterScreen,FontFamily=FontFamily,FontSize=18,Background=Background,Content=new ScrollViewer {Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto}};
         reminder=w; w.Closed+=(_,_)=> {if(reminder==w) reminder=null;}; w.Show(); w.Activate(); w.Focus();
@@ -379,11 +374,11 @@ public partial class MainWindow : Window
             ShowReminder(false); if(reminder==null || !reminder.Topmost) throw new Exception("Le rappel doit apparaître au premier plan."); Capture(reminder,"preview-rappel-reel");
             void Click(string text) {reminder!.UpdateLayout(); var button=Walk(reminder).OfType<Button>().First(b=>b.Content as string==text); button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));}
             Click("Valider la prise"); if(store.Intakes().Single(i=>i.Key==testIntake.Key).Status!="taken" || reminder!=null) throw new Exception("Validation du rappel incorrecte.");
-            foreach(int minutes in new[]{15,30,60}) foreach(bool all in new[]{false,true}) {
+            foreach(int minutes in new[]{15,30,60}) {
                 store.Save(testIntake); ShowReminder(false); var before=DateTime.Now;
-                Click((all?"Tout reporter de ":"Reporter de ")+(minutes==60?"1 h":$"{minutes} min"));
+                Click("Reporter de "+(minutes==60?"1 h":$"{minutes} min"));
                 var saved=store.Intakes().Single(i=>i.Key==testIntake.Key);
-                if(saved.Snooze<before.AddMinutes(minutes) || saved.Snooze>DateTime.Now.AddMinutes(minutes) || saved.Snooze==null || saved.Status!="pending" || Due().Any(i=>i.Key==testIntake.Key) || reminder!=null) throw new Exception($"Report de {minutes} minutes incorrect (tout : {all}).");
+                if(saved.Snooze<before.AddMinutes(minutes) || saved.Snooze>DateTime.Now.AddMinutes(minutes) || saved.Snooze==null || saved.Status!="pending" || Due().Any(i=>i.Key==testIntake.Key) || reminder!=null) throw new Exception($"Report de {minutes} minutes incorrect.");
             }
             var changeTreatment=t with {Id="ui-dosage-change",Name="Test changement de dosage",Days=127,Start=DateTime.Today.AddDays(-1),End=null,Periods=new(){new(DateTime.Today.AddDays(-1),DateTime.Today.AddDays(-1),new(){new("00:00","1 comprimé")}),new(DateTime.Today,null,new(){new("00:00","2 comprimés")})}};
             store.Save(changeTreatment); page="Aujourd’hui"; Render();
