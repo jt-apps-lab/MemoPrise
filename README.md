@@ -10,7 +10,7 @@ Application gratuite pour Windows 10 et 11, pour organiser les prises de médica
 
 ## Télécharger
 
-**[Télécharger MémoPrise 1.4.3](https://github.com/TheAsh111/memoprise/raw/refs/heads/main/distribution/Installer-MemoPrise.exe)**
+**[Télécharger MémoPrise 1.4.3](https://github.com/TheAsh111/MemoPrise/raw/refs/heads/main/distribution/Installer-MemoPrise.exe)**
 
 Lancez l’installateur téléchargé. Aucun droit administrateur ni installation séparée de .NET ne sont nécessaires. L’exécutable n’est pas signé numériquement.
 
