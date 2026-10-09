@@ -72,6 +72,7 @@ public partial class MainWindow : Window
     void Today()
     {
         body.Children.Add(Text(DateTime.Today.ToString("dddd d MMMM yyyy",French),18));
+        foreach(var treatment in store.Treatments()) if(PosologyNotice(treatment,DateTime.Today) is Border notice) body.Children.Add(notice);
         var live=store.Treatments().Select(t=>t.Id).ToHashSet(); var list=store.Day(DateTime.Today).Where(i=>i.Status!="pending" || live.Contains(i.TreatmentId)).ToList(); var next=list.FirstOrDefault(i=>i.Status=="pending" && i.Due>DateTime.Now);
         var overview=new StackPanel(); overview.Children.Add(Text(next==null?"Votre suivi de la journée":$"Prochaines prises à {next.Due:HH:mm}",22,true)); if(next!=null) overview.Children.Add(Text(string.Join(" · ",list.Where(i=>i.Status=="pending" && i.Due.TimeOfDay==next.Due.TimeOfDay).Select(i=>i.Name)),17)); int completed=list.Count(i=>i.Status=="taken"); overview.Children.Add(Text($"{completed} prise{(completed>1?"s":"")} validée{(completed>1?"s":"")} sur {list.Count}",16));
         if(list.Count>0) overview.Children.Add(new ProgressBar {Minimum=0,Maximum=list.Count,Value=completed,Height=6,Foreground=Theme.Solid("#628CBF"),Background=Theme.Solid("#D6E5F7"),BorderThickness=new Thickness(0)});
@@ -102,7 +103,9 @@ public partial class MainWindow : Window
     }
     StackPanel IntakeContent(Intake i,bool actions,bool showTime)
     {
+        var treatment=store.Treatments().FirstOrDefault(t=>t.Id==i.TreatmentId);
         var p=new StackPanel(); var heading=new WrapPanel(); var name=Text(showTime?$"{i.Due:HH:mm}   {i.Name}":i.Name,21,true); name.Margin=new Thickness(0,2,14,6); name.MaxWidth=430; heading.Children.Add(name); var quantity=Badge(i.Dose); ((TextBlock)quantity.Child).FontSize=18; heading.Children.Add(quantity); p.Children.Add(heading); if(i.Note.Length>0) {var note=Text(i.Note,16); note.Margin=new Thickness(0,0,0,7); p.Children.Add(note);}
+        if(treatment!=null && PosologyNotice(treatment,i.Due.Date) is Border notice) p.Children.Add(notice);
         string state=i.Status=="taken"?"✓ Pris":i.Status=="skipped"?"Non pris":i.Snooze>DateTime.Now?$"Reporté jusqu’à {i.Snooze:HH:mm}":i.Due<DateTime.Now?(i.Due.Date<DateTime.Today?"Non confirmé":"En retard · à confirmer"):"À prendre";
         var tracking=new WrapPanel(); var status=Badge(state,i.Status=="taken"?"#E7F4EE":"#FFF3E3",i.Status=="taken"?"#217655":"#86501E"); ((TextBlock)status.Child).FontSize=17; tracking.Children.Add(status);
         if(i.Status=="taken" && i.Taken!=null) {var stamp=Text($"Validé le {i.Taken?.ToString("dd/MM à HH:mm",French)}",15); stamp.Margin=new Thickness(2,5,0,6); tracking.Children.Add(stamp);} p.Children.Add(tracking);
@@ -119,6 +122,17 @@ public partial class MainWindow : Window
             p.Children.Add(row);
         }
         return p;
+    }
+    Border? PosologyNotice(Treatment treatment,DateTime day)
+    {
+        var change=Schedule.PosologyChange(treatment,day); if(change==null) return null;
+        var previous=change.Value.Previous.Prises; var current=change.Value.Current.Prises;
+        bool dosageChanged=!previous.Select(p=>p.Dose).OrderBy(d=>d,StringComparer.Ordinal).SequenceEqual(current.Select(p=>p.Dose).OrderBy(d=>d,StringComparer.Ordinal)) || previous.Any(p=>current.Any(c=>c.Time==p.Time && c.Dose!=p.Dose));
+        string Describe(List<DailyDose> doses)=>string.Join(" · ",doses.OrderBy(p=>p.Time).Select(p=>$"{p.Dose} à {p.Time}"));
+        var content=new StackPanel(); var title=Text((dosageChanged?"Changement de dosage":"Changement de posologie")+" — "+treatment.Name,20,true); title.Foreground=Theme.Solid("#86501E"); content.Children.Add(title);
+        content.Children.Add(Text("Avant : "+Describe(previous),16)); content.Children.Add(Text((day.Date==DateTime.Today?"À partir d’aujourd’hui":$"Depuis le {change.Value.Current.Start:dd/MM/yyyy}")+" : "+Describe(current),18,true));
+        var notice=Card(content); notice.Background=Theme.Solid("#FFF3E3"); notice.BorderBrush=Theme.Solid("#E3B674");
+        System.Windows.Automation.AutomationProperties.SetAutomationId(notice,"posology-change-"+treatment.Id); return notice;
     }
     void Change(Intake i,string state) {store.Save(i with {Status=state,Taken=state=="taken"?DateTime.Now:null,Snooze=null}); shown.Remove(i.Key); Render(); RefreshReminder();}
     void Snooze(Intake i,int minutes) {store.Save(i with {Snooze=DateTime.Now.AddMinutes(minutes)}); shown.Remove(i.Key); Render(); RefreshReminder();}
@@ -219,7 +233,8 @@ public partial class MainWindow : Window
             foreach(int minutes in new[]{15,30,60}) reports.Children.Add(Button(minutes==60?"Tout reporter de 1 h":$"Tout reporter de {minutes} min",()=> {var until=DateTime.Now.AddMinutes(minutes); foreach(var i in list) {store.Save(i with {Snooze=until}); shown.Remove(i.Key);} reminder?.Close(); Render();}));
             p.Children.Add(reports);
         }
-        var w=new Window {Icon=AppIcon.WindowIcon,Title="MémoPrise — rappel",Width=660,Height=Math.Min(720,260+list.Count*210),MinWidth=520,Topmost=true,WindowStartupLocation=WindowStartupLocation.CenterScreen,FontFamily=FontFamily,FontSize=18,Background=Background,Content=new ScrollViewer {Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto}};
+        int changeCount=demo?0:list.Count(i=>store.Treatments().Any(t=>t.Id==i.TreatmentId && Schedule.PosologyChange(t,i.Due.Date)!=null));
+        var w=new Window {Icon=AppIcon.WindowIcon,Title="MémoPrise — rappel",Width=660,Height=Math.Min(720,260+list.Count*210+changeCount*200),MinWidth=520,Topmost=true,WindowStartupLocation=WindowStartupLocation.CenterScreen,FontFamily=FontFamily,FontSize=18,Background=Background,Content=new ScrollViewer {Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto}};
         reminder=w; w.Closed+=(_,_)=> {if(reminder==w) reminder=null;}; w.Show(); w.Activate(); w.Focus();
         if(store.Setting("sound","true")=="true") System.Media.SystemSounds.Exclamation.Play();
     }
@@ -370,6 +385,14 @@ public partial class MainWindow : Window
                 var saved=store.Intakes().Single(i=>i.Key==testIntake.Key);
                 if(saved.Snooze<before.AddMinutes(minutes) || saved.Snooze>DateTime.Now.AddMinutes(minutes) || saved.Snooze==null || saved.Status!="pending" || Due().Any(i=>i.Key==testIntake.Key) || reminder!=null) throw new Exception($"Report de {minutes} minutes incorrect (tout : {all}).");
             }
+            var changeTreatment=t with {Id="ui-dosage-change",Name="Test changement de dosage",Days=127,Start=DateTime.Today.AddDays(-1),End=null,Periods=new(){new(DateTime.Today.AddDays(-1),DateTime.Today.AddDays(-1),new(){new("00:00","1 comprimé")}),new(DateTime.Today,null,new(){new("00:00","2 comprimés")})}};
+            store.Save(changeTreatment); page="Aujourd’hui"; Render();
+            var changeNotice=Walk(this).OfType<Border>().First(b=>System.Windows.Automation.AutomationProperties.GetAutomationId(b)=="posology-change-"+changeTreatment.Id);
+            var noticeLabels=Walk(changeNotice).OfType<TextBlock>().Select(b=>b.Text).ToList();
+            if(!noticeLabels.Any(s=>s.Contains("Changement de dosage")) || !noticeLabels.Any(s=>s.Contains("Avant : 1 comprimé")) || !noticeLabels.Any(s=>s.Contains("À partir d’aujourd’hui : 2 comprimés"))) throw new Exception("Le changement de dosage doit afficher les anciennes et nouvelles quantités dans Aujourd’hui.");
+            pageScroll.ScrollToTop(); Capture(this,"preview-changement-dosage"); ShowReminder(false);
+            if(reminder==null || !Walk(reminder).OfType<TextBlock>().Any(b=>b.Text.Contains("Changement de dosage"))) throw new Exception("Le rappel doit signaler le changement de dosage.");
+            Capture(reminder,"preview-rappel-changement-dosage"); reminder.Close();
             File.WriteAllText(Path.Combine(AppContext.BaseDirectory,"ui-verification.txt"),"OK : Aujourd’hui et Calendrier regroupent les médicaments de même horaire, quantités et états individuels, validation isolée et compteur actualisé ; défilement limité à la période suivante ; assistant et rappels vérifiés.");
             quitting=true; tray.Dispose(); timer.Stop(); store.Dispose(); System.Windows.Application.Current.Shutdown();
         }));

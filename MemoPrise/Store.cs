@@ -16,6 +16,17 @@ public static class Schedule
 {
     public static List<DailyDose> Doses(Treatment t) => t.Periods?.FirstOrDefault()?.Prises ?? t.Prises ?? t.Times.Split(';').Select(time=>new DailyDose(time,t.Dose)).ToList();
     public static List<DailyDose> Doses(Treatment t,DateTime day) => t.Periods==null?Doses(t):t.Periods.FirstOrDefault(p=>day.Date>=p.Start.Date && (p.End==null || day.Date<=p.End.Value.Date))?.Prises ?? new List<DailyDose>();
+    public static (TreatmentPeriod Previous,TreatmentPeriod Current)? PosologyChange(Treatment t,DateTime day)
+    {
+        if(!Applies(t,day) || t.Periods==null) return null;
+        int index=t.Periods.FindIndex(p=>day.Date>=p.Start.Date && (p.End==null || day.Date<=p.End.Value.Date));
+        if(index<=0) return null;
+        var current=t.Periods[index]; var previous=t.Periods[index-1];
+        var first=current.Start.Date;
+        while(first<day.Date && (t.Days & (1<<(int)first.DayOfWeek))==0) first=first.AddDays(1);
+        if(first!=day.Date || previous.Prises.OrderBy(p=>p.Time).SequenceEqual(current.Prises.OrderBy(p=>p.Time))) return null;
+        return (previous,current);
+    }
     public static void ValidatePeriods(Treatment t)
     {
         if(t.Periods==null) {ValidateDoses(Doses(t)); return;}
