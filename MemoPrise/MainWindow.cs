@@ -112,7 +112,7 @@ public partial class MainWindow : Window
             if(i.Status=="pending")
             {
                 var validate=Primary(Button("Valider la prise",()=>Change(i,"taken"))); System.Windows.Automation.AutomationProperties.SetAutomationId(validate,"validate-"+i.Key); row.Children.Add(validate);
-                if(i.Due.Date==DateTime.Today) row.Children.Add(Button("Reporter de 10 min",()=>Snooze(i)));
+                if(i.Due.Date==DateTime.Today) foreach(int minutes in new[]{15,30,60}) row.Children.Add(Button(minutes==60?"Reporter de 1 h":$"Reporter de {minutes} min",()=>Snooze(i,minutes)));
                 var skip=Button("Non pris",()=> {if(MessageBox.Show("Marquer cette prise comme non prise ?","Confirmation",MessageBoxButton.YesNo)==MessageBoxResult.Yes) Change(i,"skipped");}); skip.Background=Brushes.White; row.Children.Add(skip);
             }
             else {var undo=Button("Annuler la validation",()=> {if(MessageBox.Show("Annuler cette validation ?","Confirmation",MessageBoxButton.YesNo)==MessageBoxResult.Yes) Change(i,"pending");}); undo.FontSize=16; undo.Padding=new Thickness(12,6,12,6); undo.Background=Brushes.White; row.Children.Add(undo);}
@@ -121,7 +121,7 @@ public partial class MainWindow : Window
         return p;
     }
     void Change(Intake i,string state) {store.Save(i with {Status=state,Taken=state=="taken"?DateTime.Now:null,Snooze=null}); shown.Remove(i.Key); Render(); RefreshReminder();}
-    void Snooze(Intake i) {store.Save(i with {Snooze=DateTime.Now.AddMinutes(10)}); shown.Remove(i.Key); Render(); RefreshReminder();}
+    void Snooze(Intake i,int minutes) {store.Save(i with {Snooze=DateTime.Now.AddMinutes(minutes)}); shown.Remove(i.Key); Render(); RefreshReminder();}
     void History()
     {
         body.Children.Add(Text("Choisissez une date pour consulter les prises.",17));
@@ -214,7 +214,11 @@ public partial class MainWindow : Window
         var p=new StackPanel {Margin=new Thickness(24)}; p.Children.Add(Text(demo?"Tester le rappel":"À prendre maintenant :",28,true));
         foreach(var i in list) p.Children.Add(demo?Card(Text(i.Name+"\n"+i.Note,20)):IntakeCard(i,true));
         if(demo) p.Children.Add(Button("Fermer le test",()=>reminder?.Close()));
-        else p.Children.Add(Button("Tout reporter de 10 min",()=> {foreach(var i in list) {store.Save(i with {Snooze=DateTime.Now.AddMinutes(10)}); shown.Remove(i.Key);} reminder?.Close(); Render();}));
+        else {
+            var reports=new WrapPanel();
+            foreach(int minutes in new[]{15,30,60}) reports.Children.Add(Button(minutes==60?"Tout reporter de 1 h":$"Tout reporter de {minutes} min",()=> {var until=DateTime.Now.AddMinutes(minutes); foreach(var i in list) {store.Save(i with {Snooze=until}); shown.Remove(i.Key);} reminder?.Close(); Render();}));
+            p.Children.Add(reports);
+        }
         var w=new Window {Icon=AppIcon.WindowIcon,Title="MémoPrise — rappel",Width=660,Height=Math.Min(720,260+list.Count*210),MinWidth=520,Topmost=true,WindowStartupLocation=WindowStartupLocation.CenterScreen,FontFamily=FontFamily,FontSize=18,Background=Background,Content=new ScrollViewer {Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto}};
         reminder=w; w.Closed+=(_,_)=> {if(reminder==w) reminder=null;}; w.Show(); w.Activate(); w.Focus();
         if(store.Setting("sound","true")=="true") System.Media.SystemSounds.Exclamation.Play();
@@ -360,7 +364,12 @@ public partial class MainWindow : Window
             ShowReminder(false); if(reminder==null || !reminder.Topmost) throw new Exception("Le rappel doit apparaître au premier plan."); Capture(reminder,"preview-rappel-reel");
             void Click(string text) {reminder!.UpdateLayout(); var button=Walk(reminder).OfType<Button>().First(b=>b.Content as string==text); button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));}
             Click("Valider la prise"); if(store.Intakes().Single(i=>i.Key==testIntake.Key).Status!="taken" || reminder!=null) throw new Exception("Validation du rappel incorrecte.");
-            store.Save(testIntake); ShowReminder(false); Click("Reporter de 10 min"); if(Due().Any(i=>i.Key==testIntake.Key) || reminder!=null) throw new Exception("Report du rappel incorrect.");
+            foreach(int minutes in new[]{15,30,60}) foreach(bool all in new[]{false,true}) {
+                store.Save(testIntake); ShowReminder(false); var before=DateTime.Now;
+                Click((all?"Tout reporter de ":"Reporter de ")+(minutes==60?"1 h":$"{minutes} min"));
+                var saved=store.Intakes().Single(i=>i.Key==testIntake.Key);
+                if(saved.Snooze<before.AddMinutes(minutes) || saved.Snooze>DateTime.Now.AddMinutes(minutes) || saved.Snooze==null || saved.Status!="pending" || Due().Any(i=>i.Key==testIntake.Key) || reminder!=null) throw new Exception($"Report de {minutes} minutes incorrect (tout : {all}).");
+            }
             File.WriteAllText(Path.Combine(AppContext.BaseDirectory,"ui-verification.txt"),"OK : Aujourd’hui et Calendrier regroupent les médicaments de même horaire, quantités et états individuels, validation isolée et compteur actualisé ; défilement limité à la période suivante ; assistant et rappels vérifiés.");
             quitting=true; tray.Dispose(); timer.Stop(); store.Dispose(); System.Windows.Application.Current.Shutdown();
         }));

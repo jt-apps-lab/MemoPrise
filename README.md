@@ -4,11 +4,12 @@ Application gratuite pour Windows 10 et 11, pour organiser les prises de médica
 
 - Horaires et quantités personnalisables, avec des posologies fixes ou par périodes.
 - Validation des prises et consultation de l’historique dans un calendrier.
+- Report des rappels de 15 minutes, 30 minutes ou 1 heure.
 - Données enregistrées localement, sans compte ni connexion Internet.
 
 ## Télécharger
 
-**[Télécharger MémoPrise 1.4.1](https://github.com/TheAsh111/memoprise/raw/refs/heads/main/distribution/Installer-MemoPrise.exe)**
+**[Télécharger MémoPrise 1.4.2](https://github.com/TheAsh111/memoprise/raw/refs/heads/main/distribution/Installer-MemoPrise.exe)**
 
 Lancez l’installateur téléchargé. Aucun droit administrateur ni installation séparée de .NET ne sont nécessaires. L’exécutable n’est pas signé numériquement.
 
