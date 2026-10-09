@@ -40,7 +40,7 @@ public partial class MainWindow : Window
         brand.Children.Add(new TextBlock {Text="MémoPrise",FontSize=24,FontWeight=FontWeights.SemiBold,VerticalAlignment=VerticalAlignment.Center});
         sidebar.Children.Add(brand);
         foreach(var name in new[]{"Aujourd’hui","Calendrier","Boîte à pharmacie","Paramètres"}) {var button=Button(name,()=> {page=name; Render();}); button.HorizontalAlignment=HorizontalAlignment.Stretch; button.HorizontalContentAlignment=HorizontalAlignment.Left; button.Margin=new Thickness(0,5,0,5); navigation[name]=button; sidebar.Children.Add(button);}
-        var actions=new StackPanel(); var reduce=Button("Réduire l’application",()=>WindowState=WindowState.Minimized); reduce.ToolTip="Les rappels restent actifs. Retrouvez MémoPrise dans la barre des tâches."; reduce.Margin=new Thickness(0,4,0,4); System.Windows.Automation.AutomationProperties.SetAutomationId(reduce,"minimize-app"); actions.Children.Add(reduce);
+        var actions=new StackPanel(); var reduce=Button("Réduire l’application",ReduceToTray); reduce.ToolTip="Les rappels restent actifs. Retrouvez MémoPrise près de l’horloge."; reduce.Margin=new Thickness(0,4,0,4); System.Windows.Automation.AutomationProperties.SetAutomationId(reduce,"minimize-app"); actions.Children.Add(reduce);
         var quit=Button("Quitter l’application",Quit); quit.Margin=new Thickness(0,4,0,4); actions.Children.Add(quit);
         var dock=new DockPanel(); DockPanel.SetDock(actions,Dock.Bottom); dock.Children.Add(actions); dock.Children.Add(sidebar);
         root.Children.Add(new Border {Background=Theme.Sidebar,CornerRadius=new CornerRadius(22),Margin=new Thickness(12),Padding=new Thickness(18,22,18,18),Child=dock}); pageScroll.Content=body; Grid.SetColumn(pageScroll,1); root.Children.Add(pageScroll); Content=root;
@@ -48,6 +48,7 @@ public partial class MainWindow : Window
         tray.DoubleClick+=(_,_)=>Dispatcher.Invoke(Open);
         var menu=new Forms.ContextMenuStrip(); menu.Items.Add("Ouvrir MémoPrise",null,(_,_)=>Dispatcher.Invoke(Open)); menu.Items.Add("Quitter",null,(_,_)=>Dispatcher.Invoke(Quit)); tray.ContextMenuStrip=menu;
         Closing+=(_,e)=> {if(!quitting) {e.Cancel=true; Hide();}};
+        StateChanged+=(_,_)=> {if(WindowState==WindowState.Minimized) ReduceToTray();};
         store.MaterializePast();
         if(!preview && store.Setting("startup","true")=="true") SetStartup(true);
         ApplyFont(); Render(); timer.Tick+=(_,_)=> {if(!preview) Tick();}; timer.Start();
@@ -59,7 +60,8 @@ public partial class MainWindow : Window
     internal static Button Primary(Button button) {button.Background=Theme.Accent; button.Foreground=Brushes.White; button.BorderBrush=Theme.Solid("#527DB5"); return button;}
     static Border Badge(string label,string background="#EDF4FF",string foreground="#355C89")=>new() {Background=Brush(background),CornerRadius=new CornerRadius(8),Padding=new Thickness(10,5,10,5),Margin=new Thickness(0,0,8,6),HorizontalAlignment=HorizontalAlignment.Left,Child=new TextBlock {Text=label,FontSize=16,FontWeight=FontWeights.SemiBold,Foreground=Brush(foreground),TextWrapping=TextWrapping.Wrap}};
     static Border Card(UIElement content)=>new() {Background=Brushes.White,BorderBrush=Theme.Outline,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(18),Effect=Theme.Shadow,Padding=new Thickness(22),Margin=new Thickness(0,0,0,16),Child=content};
-    void Open() {Show(); WindowState=WindowState.Normal; Activate();}
+    void ReduceToTray() {ShowInTaskbar=false; Hide();}
+    void Open() {WindowState=WindowState.Normal; ShowInTaskbar=true; Show(); Activate();}
     void Quit() {if(MessageBox.Show("Quitter MémoPrise ? Les rappels seront arrêtés jusqu’au prochain lancement.","Quitter",MessageBoxButton.YesNo)==MessageBoxResult.Yes) {quitting=true; timer.Stop(); reminder?.Close(); tray.Dispose(); store.Dispose(); System.Windows.Application.Current.Shutdown();}}
     void Render()
     {
@@ -245,7 +247,9 @@ public partial class MainWindow : Window
             IEnumerable<DependencyObject> Walk(DependencyObject node) {yield return node; for(int n=0;n<VisualTreeHelper.GetChildrenCount(node);n++) foreach(var child in Walk(VisualTreeHelper.GetChild(node,n))) yield return child;}
             T Find<T>(Window window,string id) where T:DependencyObject {window.UpdateLayout(); return Walk(window).OfType<T>().Single(v=>System.Windows.Automation.AutomationProperties.GetAutomationId(v)==id);}
             void ClickIn(Window window,string id) => Find<Button>(window,id).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-            ClickIn(this,"minimize-app"); if(WindowState!=WindowState.Minimized || !timer.IsEnabled || !tray.Visible) throw new Exception("La réduction doit conserver les rappels."); WindowState=WindowState.Normal;
+            ClickIn(this,"minimize-app"); if(IsVisible || ShowInTaskbar || !timer.IsEnabled || !tray.Visible) throw new Exception("La réduction doit conserver uniquement l’icône près de l’horloge et les rappels.");
+            Open(); if(!IsVisible || !ShowInTaskbar || WindowState!=WindowState.Normal) throw new Exception("L’icône près de l’horloge doit permettre de rouvrir la fenêtre.");
+            WindowState=WindowState.Minimized; if(IsVisible || ShowInTaskbar || !timer.IsEnabled || !tray.Visible) throw new Exception("Le bouton Réduire de Windows doit conserver uniquement l’icône près de l’horloge et les rappels."); Open();
             Capture(this,"preview-vide");
             var t=new Treatment("preview","Médicament de démonstration","1 cachet","12:00;20:00",127,DateTime.Today.AddDays(-2),null,"Exemple de consigne",true,new List<DailyDose>{new("12:00","1 cachet"),new("20:00","2 cachets")}); store.Save(t); store.MaterializePast();
             var t2=t with {Id="preview-second",Name="Médicament B",Dose="3 gouttes",Note="Avec un verre d’eau",Prises=new(){new("12:00","3 gouttes"),new("20:00","5 gouttes")}}; store.Save(t2);
